@@ -3,7 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from api.extensions import db
 from sqlalchemy.exc import SQLAlchemyError
-from flask_restful import Api, Resource, reqparse, abort, fields, marshal_with
+from flask_restful import Api, Resource, reqparse, abort, fields, marshal_with,marshal
 from api.models import User, Category, Brand, Product, Order, Cart, OrderProduct, Wishlist, db
 import json
 import re
@@ -51,13 +51,55 @@ class UserResource(Resource):
     @marshal_with(user_fields)
     def post(self):
         args = user_args.parse_args()
-
-        # Validación del correo
-        email = args['email'].strip()
-        if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email):
-            response = Response(json.dumps({'error': 'Invalid email format'}), status=400, mimetype='application/json')
+        if not args['name'] or args['name'].isspace():
+            response = Response(json.dumps({'error': 'name cannot be empty'}),
+            status= 400,
+            mimetype='application/json')
+            return abort(response)
+        if not args['lstF'] or args['lstF'].isspace():
+            response = Response(json.dumps({'error': 'lstF cannot be empty'}),
+            status= 400,
+            mimetype='application/json')
+            return abort(response)
+        if not args['lstM'] or args['lstM'].isspace():
+            response = Response(json.dumps({'error': 'lstM cannot be empty'}),
+            status= 400,
+            mimetype='application/json')
+            return abort(response)
+        if not args['address'] or args['address'].isspace():
+            response = Response(json.dumps({'error': 'Address cannot be empty'}),
+            status= 400,
+            mimetype='application/json')
+            return abort(response)
+        if not args['email'] or args['email'].isspace():
+            response = Response(json.dumps({'error': 'Email cannot be empty'}),
+            status= 400,
+            mimetype='application/json')
+            return abort(response)
+        email= args['email'].strip()
+        if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",email):
+            response = Response(json.dumps({'error': 'Invalid email format'}),
+            status= 400,
+            mimetype='application/json')
+            return abort(response)
+        if len(args['password']) < 8:
+            response = Response(json.dumps({'error': 'Password must be at least 8 characters long'}), status=400, mimetype='application/json')
+            return abort(response)
+        if args['password'] != args['c_pass']:
+            response = Response(json.dumps({'error': 'Passwords do not match'}), status=400, mimetype='application/json')
+            return abort(response)
+        if not re.match(r"^\+?[1-9]\d{1,14}$", args['phone']):
+            response = Response(json.dumps({'error': 'Invalid phone number format'}), status=400, mimetype='application/json')
             return abort(response)
 
+        if args['payment'] not in ['credit_card', 'paypal', 'bank_transfer']:
+            response = Response(json.dumps({'error': 'Invalid payment method'}), status=400, mimetype='application/json')
+            return abort(response)
+        
+        if args['role'] not in [0, 1]:  # Asegura que el rol es válido
+            response = Response(json.dumps({'error': 'Invalid role'}), status=400, mimetype='application/json')
+            return abort(response)
+ 
         # Crear el nuevo usuario
         user = User(
             name=args['name'],
@@ -99,7 +141,6 @@ class UserResource(Resource):
 
         db.session.commit()
         return user, 200
-
     def delete(self, user_id):
         user = User.query.filter_by(id=user_id).first()
         if not user:
@@ -127,33 +168,99 @@ product_fields = {
     'price': fields.Float,
     'description': fields.String,
     'stock': fields.Integer,
-    'category_id': fields.Integer,
-    'brand_id': fields.Integer,
+    # 'category_id': fields.Integer,
+    # 'brand_id': fields.Integer,
     'img': fields.String,
-    'category_name': fields.String(attribute=lambda x: x.category.name if x.category else None),
-    'brand_name': fields.String(attribute=lambda x: x.brand.name if x.brand else None),
+    'category_name':fields.String,
+    'brand_username':fields.String,
+    # 'category_name': fields.String(attribute=lambda x: x.category.name if hasattr(x.category, 'name') else None),
+    # 'brand_name': fields.String(attribute=lambda x: x.brand.username if x.brand else None),
     'created_at': fields.DateTime,
     'updated_at': fields.DateTime
 }
 
 class ProductResource(Resource):
-    @marshal_with(product_fields)
     def get(self, product_id=None):
-        if product_id:  # Obtener un producto específico
-            product = Product.query.get(product_id)
+        if product_id:
+            product = Product.query.filter_by(id=product_id).first()
             if not product:
-                abort(404, message="Product not found")
-            return product, 200
-        else:  # Obtener todos los productos
+                # Retorna un mensaje de error directamente
+                return {"message": "Product not found"}, 404
+            # Completar información adicional
+            category = Category.query.get(product.category_id)
+            brand = Brand.query.get(product.brand_id)
+            product.category_name = category.name if category else None
+            product.brand_username = brand.username if brand else None
+            # Formatear solo la respuesta válida
+            return marshal(product, product_fields), 200
+        else:
             products = Product.query.all()
-            return products, 200
-
-    @marshal_with(product_fields)
+            for product in products:
+                category = Category.query.get(product.category_id)
+                brand = Brand.query.get(product.brand_id)
+                product.category_name = category.name if category else None
+                product.brand_username = brand.username if brand else None
+            return marshal(products, product_fields), 200
+  
+    
     def post(self):
         args = product_args.parse_args()
         
-        # Crear un nuevo producto
-        product = Product(
+        # # Validaciones adicionales si es necesario
+        if not args['name'] or args['name'].isspace():
+            response = Response(json.dumps({'error': 'Name cannot be empty'}),
+                             status=400,
+                             mimetype='application/json')
+            return abort(response)
+            
+         # Validación para el precio (debe ser numérico y positivo)
+        try:
+            price = float(args['price'])
+            if price <= 0:
+                return abort(400, message="Price must be greater than 0")
+        except ValueError:
+            return abort(400,message="Price must be a valid number")
+
+        if not args['description'] or args['description'].isspace():
+            response = Response(json.dumps({'error': 'description cannot be empty'}),
+                             status=400,
+                             mimetype='application/json')
+            return abort(response)
+            
+        # Validación para el stock (debe ser un entero no negativo)
+        try:
+            stock = int(args['stock'])
+            if stock < 0:
+                return abort(400, message="Stock cannot be negative")
+        except ValueError:
+            return {"error": "Stock must be a valid integer"}, 400
+         # Validación para la URL de la imagen (opcional, pero puede ser verificada si se requiere)
+        if args['img'] and not args['img'].startswith(('http://', 'https://')):
+            return abort(400, message="Image URL must start with 'http://' or 'https://'")
+        
+        # if not args['category_id'] and str(args['category_id']).isspace():
+        if not args['category_id'] or args['category_id'] == " ":
+            # return abort(404,message="category id cannot by empty")
+            return {"error": "Category ID cannot be empty"}, 400
+        
+        if not args['brand_id'] or str(args['brand_id']).isspace():
+            return ({"error": "Brand ID cannot be empty or just spaces"}), 400
+        # Validaciones para categoría y marca (deben existir en la base de datos)
+        category = Category.query.get(args['category_id'])
+        if not category:
+            return abort(404, message="categroy not found.")
+
+        brand = Brand.query.get(args['brand_id'])
+        if not brand:
+            return abort(404, message="brand not found.")
+        
+        existing_product = Product.query.filter_by(name=args['name']).first()
+        if existing_product:
+            # return abort(400,message="product already exists")
+            return {"message": "Product already exists"}, 400
+
+        # Crear el nuevo producto
+        new_product = Product(
             name=args['name'],
             price=args['price'],
             description=args['description'],
@@ -162,9 +269,12 @@ class ProductResource(Resource):
             brand_id=args['brand_id'],
             img=args['img']
         )
-        db.session.add(product)
+        
+        # Guardar el producto en la base de datos
+        db.session.add(new_product)
         db.session.commit()
-        return product, 201
+        return marshal(new_product, product_fields), 201
+
 
     @marshal_with(product_fields)
     def patch(self, product_id):
