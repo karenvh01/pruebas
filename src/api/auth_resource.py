@@ -31,6 +31,13 @@ class AuthResource(Resource):
             return {"message": "Usuario registrado exitosamente"}, 201
 
         elif action == "login":
+
+            required_fields = ["email", "password"]
+            missing_fields = [field for field in required_fields if field not in data or not data[field]]
+
+            if missing_fields:
+                return {"message": f"Los siguientes campos son requeridos: {', '.join(missing_fields)}"}, 400
+            
             usuario = User.query.filter_by(email=data["email"]).first()
             if not usuario or not check_password_hash(usuario.password, data["password"]):
                 return {"message": "Credenciales incorrectas"}, 401

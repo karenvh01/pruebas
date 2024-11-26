@@ -376,8 +376,14 @@ class WishlistController(Resource):
 class CartController(Resource):
     # Parser para validar los datos de entrada
     cart_args = reqparse.RequestParser()
-    cart_args.add_argument('product_id', type=int, required=True, help="Product ID is required.")
-    cart_args.add_argument('quantity', type=int, required=True, help="Quantity is required.")
+    cart_args.add_argument('product_id', type=int, required=True, help="Product ID is required and must be a positive integer.")
+    cart_args.add_argument('quantity', type=int, required=True, help="Quantity is required and must be a positive integer.")
+
+    def validate_positive_values(self, product_id, quantity):
+        if product_id <= 0:
+            abort(400, message="Product ID must be greater than 0.")
+        if quantity <= 0:
+            abort(400, message="Quantity must be greater than 0.")
 
     @jwt_required()
     def post(self):
@@ -386,19 +392,30 @@ class CartController(Resource):
         product_id = args['product_id']
         quantity = args['quantity']
 
+        self.validate_positive_values(product_id, quantity)
+
         # Verificar si el producto existe
         product = Product.query.get(product_id)
         if not product:
             abort(404, message="Product not found")
+
+        if quantity > product.stock:
+            abort(400, message=f"Quantity exceeds available stock. Only {product.stock} items are available.")
 
         # Verificar si el producto ya está en el carrito
         cart_item = Cart.query.filter_by(user_id=user_id, product_id=product_id).first()
 
         if cart_item:
             # Si el producto ya está en el carrito, actualizar la cantidad
-            cart_item.quantity += quantity
+            new_quantity = cart_item.quantity + quantity
+
+            if new_quantity > product.stock:
+                abort(400, message=f"Quantity exceeds available stock. Only {product.stock} items are available.")
+
+            cart_item.quantity = new_quantity
             cart_item.total = cart_item.quantity * cart_item.price
-            cart_item.save()
+            # cart_item.save()
+            db.session.commit()
         else:
             # Si no está en el carrito, agregarlo
             price = product.price
@@ -431,26 +448,46 @@ class CartController(Resource):
         return {"data": formatted_cart_items}, 200
 
 
-    # @jwt_required()
-    # def put(self, id):
-    #     user_id = get_jwt_identity()
-    #     cart_item = Cart.query.filter_by(id=id, user_id=user_id).all()
+    @jwt_required()
+    def put(self, id):
+        user_id = get_jwt_identity()
+
+        if id <= 0:
+            abort(400, message="ID must be greater than 0.")
+
+       
+        cart_item = Cart.query.filter_by(id=id, user_id=user_id).first()
+
+        if not cart_item:
+            abort(404, message="Cart item not found")
+
         
-    #     if not cart_item:
-    #         abort(404, message="Cart item not found")
-            
-    #         args = self.cart_args.parse_args()
-    #         new_quantity = args['quantity']
-            
-    #         product = Product.query.get(cart_item.product_id)
-            
-    #         if new_quantity > product.stock:
-    #             abort(400, message="Quantity exceeds available stock")
-                
-    #             cart_item.quantity = new_quantity
-    #             cart_item.total = cart_item.quantity * cart_item.price
-    #             db.session.commit()
-    #             return {"message": "Cart item quantity updated successfully"}, 200
+        args = self.cart_args.parse_args()
+        new_quantity = args['quantity']
+        product_id = args['product_id'] 
+
+        if new_quantity <= 0:
+            abort(400, message="Quantity must be greater than 0.")
+
+        if product_id <= 0:
+            abort(400, message="Quantity must be greater than 0.")
+
+        if product_id != cart_item.product_id:
+            abort(400, message="Product ID mismatch with the cart item") 
+
+        product = Product.query.get(cart_item.product_id)
+        if not product:
+            abort(404, message="Product not found")
+
+        if new_quantity + cart_item.quantity> product.stock:
+            abort(400, message="Quantity exceeds available stock")
+
+        cart_item.quantity += new_quantity
+        cart_item.total = cart_item.quantity * cart_item.price
+
+        db.session.commit()
+
+        return {"message": "Cart item quantity updated successfully"}, 200
 
 
     @jwt_required()
