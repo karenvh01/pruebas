@@ -2,7 +2,7 @@ from flask import Flask
 from api.extensions import db
 from flask_jwt_extended import JWTManager
 from api.auth_resource import AuthResource
-from api.controllers import UserResource, BrandResource, Categories, ProductResource, WishlistController, CartController, Brands
+from api.controllers import UserResource, BrandResource, Categories, ProductResource, WishlistController, CartController, Brands,OrderController
 from flask_sqlalchemy import SQLAlchemy
 from flask_restful import Api, Resource, reqparse, abort, fields, marshal_with
 
@@ -27,6 +27,7 @@ api.add_resource(ProductResource, "/api/products/", "/api/products/<int:product_
 api.add_resource(AuthResource, "/auth/<string:action>") 
 api.add_resource(WishlistController, '/wishlist', '/wishlist/<int:wishlist_id>')
 api.add_resource(CartController, '/carts', '/carts/<int:id>')
+api.add_resource(OrderController, '/orders','/orders/<int:order_id>')
 
 @app.route("/")
 def hello_world():

@@ -504,6 +504,66 @@ class CartController(Resource):
 
         return {"message": "Product removed from cart successfully"}, 200
     
+class OrderController(Resource):
+    @jwt_required()
+    def post(self):
+        user_id = get_jwt_identity()
+
+        # Verificar si el usuario tiene productos en el carrito
+        cart_items = Cart.query.filter_by(user_id=user_id).all()
+        if not cart_items:
+            abort(400, message="Your cart is empty")
+
+        # Calcular el total del carrito
+        total_amount = sum(item.total for item in cart_items)
+
+        # Crear una nueva orden
+        new_order = Order(user_id=user_id, total_amount=total_amount)
+        db.session.add(new_order)
+        db.session.commit()
+
+        # Vaciar el carrito después de crear la orden
+        for item in cart_items:
+            db.session.delete(item)
+        db.session.commit()
+
+        return {"message": "Order created successfully", "order_id": new_order.id, "total_amount": float(total_amount)}, 201
+
+    @jwt_required()
+    def get(self):
+        user_id = get_jwt_identity()
+        orders = Order.query.filter_by(user_id=user_id).all()
+
+        if not orders:
+            return {"message": "No orders found"}, 200
+
+        # Formatear las fechas para que sean serializables a JSON
+        formatted_orders = [
+            {
+                'order_id': order.id,
+                'total_amount': float(order.total_amount),
+                'created_at': order.created_at.isoformat() if order.created_at else None,
+                'updated_at': order.updated_at.isoformat() if order.updated_at else None
+            }
+            for order in orders
+        ]
+
+        return {"data": formatted_orders}, 200
+    @jwt_required()
+    def delete(self, order_id):
+        user_id = get_jwt_identity()
+
+        # Buscar la orden por ID
+        order = Order.query.filter_by(id=order_id, user_id=user_id).first()
+
+        if not order:
+            abort(404, message="Order not found")
+
+        # Eliminar la orden
+        db.session.delete(order)
+        db.session.commit()
+
+        return {"message": "Order deleted successfully", "order_id": order.id}, 200
 
 category_args = reqparse.RequestParser()
 category_args.add_argument("name", type=str, required=True, help="Name is required and should not exceed 100 characters")
