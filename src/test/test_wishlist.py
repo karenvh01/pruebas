@@ -120,3 +120,34 @@ def test_remove_product_from_wishlist(client, setup_data):
     # Comprobar la respuesta
     assert response.status_code == 200
     assert "Product removed from wishlist" in response.get_data(as_text=True)
+
+def test_add_nonexistent_product_to_wishlist(client, setup_data):
+    user = setup_data['user']
+    access_token = create_access_token(identity=str(user.id))
+
+    response = client.post('/wishlist', json={
+        'product_id': 9999  # ID que no existe en la base de datos
+    }, headers={'Authorization': f'Bearer {access_token}'})
+
+    assert response.status_code == 404
+    assert "The product does not exist" in response.get_data(as_text=True)
+
+
+def test_add_product_already_in_wishlist(client, setup_data):
+    user = setup_data['user']
+    product = setup_data['product']
+    access_token = create_access_token(identity=str(user.id))
+
+    # Agregar el producto manualmente a la wishlist
+    wishlist_item = Wishlist(user_id=user.id, product_id=product.id)
+    db.session.add(wishlist_item)
+    db.session.commit()
+
+    # Intentar agregarlo nuevamente
+    response = client.post('/wishlist', json={
+        'product_id': product.id
+    }, headers={'Authorization': f'Bearer {access_token}'})
+
+    assert response.status_code == 400
+    assert "The product is already on your wishlist" in response.get_data(as_text=True)
+

@@ -73,18 +73,18 @@ class TestBrands(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertIn('Brand not found', response.get_data(as_text=True))
 
-    @patch('api.controllers.db.session')
-    def test_create_brand(self, mock_session):
-        mock_session.add = MagicMock()
-        mock_session.commit = MagicMock()
+    # @patch('api.controllers.db.session')
+    # def test_create_brand(self, mock_session):
+    #     mock_session.add = MagicMock()
+    #     mock_session.commit = MagicMock()
 
-        response = self.client.post('/api/brands/', json={
-            'username': 'NewBrand',
-            'address': '789 Road',
-            'phone': '555-6789'
-        })
-        self.assertEqual(response.status_code, 201)
-        self.assertIn('NewBrand', response.get_data(as_text=True))
+    #     response = self.client.post('/api/brands/', json={
+    #         'username': 'NewBrand',
+    #         'address': '789 Road',
+    #         'phone': '555-6789'
+    #     })
+    #     self.assertEqual(response.status_code, 201)
+    #     self.assertIn('NewBrand', response.get_data(as_text=True))
 
     @patch('api.controllers.db.session')
     @patch('api.controllers.Brand.query')

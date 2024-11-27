@@ -154,3 +154,29 @@ def test_delete_order(client, setup_data):
     # Comprobar la respuesta
     assert response.status_code == 200
     assert "Order deleted successfully" in response.get_data(as_text=True)
+
+def test_create_order_with_empty_cart(client, setup_data):
+    user = setup_data['user']
+    
+    # Eliminar todos los productos del carrito
+    Cart.query.filter_by(user_id=user.id).delete()
+    db.session.commit()
+
+    access_token = create_access_token(identity=str(user.id))
+
+    # Intentar crear una orden con el carrito vacío
+    response = client.post('/orders', headers={'Authorization': f'Bearer {access_token}'})
+
+    assert response.status_code == 400
+    assert "Your cart is empty" in response.get_data(as_text=True)
+def test_delete_nonexistent_order(client, setup_data):
+    user = setup_data['user']
+
+    access_token = create_access_token(identity=str(user.id))
+
+    # Intentar eliminar una orden inexistente
+    response = client.delete('/orders/999', headers={'Authorization': f'Bearer {access_token}'})
+
+    assert response.status_code == 404
+    assert "Order not found" in response.get_data(as_text=True)
+

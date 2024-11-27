@@ -144,3 +144,55 @@ def test_remove_product_from_cart(client, setup_data):
     assert "Product removed from cart successfully" in response.get_data(as_text=True)
 
 
+def test_add_nonexistent_product_to_cart(client, setup_data):
+    user = setup_data['user']
+    access_token = create_access_token(identity=str(user.id))
+
+    response = client.post('/carts', json={
+        'product_id': 9999,  # ID que no existe
+        'quantity': 1
+    }, headers={'Authorization': f'Bearer {access_token}'})
+
+    assert response.status_code == 404
+    assert "Product not found" in response.get_data(as_text=True)
+
+def test_update_nonexistent_cart_item(client, setup_data):
+    user = setup_data['user']
+    access_token = create_access_token(identity=str(user.id))
+
+    response = client.put('/carts/9999', json={
+        'product_id': 1,
+        'quantity': 2
+    }, headers={'Authorization': f'Bearer {access_token}'})
+
+    assert response.status_code == 404
+    assert "Cart item not found" in response.get_data(as_text=True)
+
+def test_cart_item_total_calculation(client, setup_data):
+    user = setup_data['user']
+    product = setup_data['product']
+    access_token = create_access_token(identity=str(user.id))
+
+    # Agregar producto al carrito
+    response = client.post('/carts', json={
+        'product_id': product.id,
+        'quantity': 3
+    }, headers={'Authorization': f'Bearer {access_token}'})
+    assert response.status_code == 200
+
+    # Verificar en la base de datos
+    cart_item = Cart.query.filter_by(user_id=user.id, product_id=product.id).first()
+    assert cart_item.total == product.price * 3
+def test_add_product_to_cart_exceeding_stock(client, setup_data):
+    user = setup_data['user']
+    product = setup_data['product']
+    access_token = create_access_token(identity=str(user.id))
+
+    # Intentar agregar más cantidad que el stock disponible
+    response = client.post('/carts', json={
+        'product_id': product.id,
+        'quantity': product.stock + 1
+    }, headers={'Authorization': f'Bearer {access_token}'})
+
+    assert response.status_code == 400
+    assert f"Quantity exceeds available stock. Only {product.stock} items are available." in response.get_data(as_text=True)

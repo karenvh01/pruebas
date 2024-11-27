@@ -14,7 +14,7 @@ class TestProduct(unittest.TestCase):
         self.app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
         self.app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
         self.api = Api(self.app)
-        self.api.add_resource(ProductResource, '/products')
+        self.api.add_resource(ProductResource, '/products', '/products/<int:product_id>')
         self.client = self.app.test_client()
         self.app_context = self.app.app_context()
         self.app_context.push()
@@ -55,13 +55,34 @@ class TestProduct(unittest.TestCase):
             response = self.client.post('/products', json=data)
             self.assertEqual(response.status_code, 201)
             self.assertIn("Smartphone", response.get_data(as_text=True))
-    
-    # def test_get_nonexistent_product(self):
-    #     response = self.client.get('/products/999')  # Supongamos que el ID 999 no existe
-    #     self.assertEqual(response.status_code, 404)  # Verifica el código de estado
-    #     self.assertIn("Product not found", response.get_data(as_text=True))  # Verifica el mensaje directamente
 
+    def test_get_nonexistent_product(self):
+      response = self.client.get('/products/999')  # Supongamos que el ID 999 no existe
+      self.assertEqual(response.status_code, 404)
+      self.assertIn("Product not found", response.get_data(as_text=True))
 
+    def test_delete_product_success(self):
+        with self.app_context:
+        # Crear producto para probar su eliminación
+            product = Product(
+                name="Camera",
+                price=499.99,
+                description="High-resolution camera",
+                stock=10,
+                category_id=self.category.id,
+                brand_id=self.brand.id,
+                img="http://example.com/camera.jpg"
+            )
+            db.session.add(product)
+            db.session.commit()
+
+        # Intentar eliminar el producto creado
+            response = self.client.delete(f'/products/{product.id}')
+            self.assertEqual(response.status_code, 204)  # Código 204 para DELETE exitoso
+
+        # Verificar que ya no existe en la base de datos
+            deleted_product = Product.query.get(product.id)
+            self.assertIsNone(deleted_product)
     @patch('api.models.Product.query')
     def test_product_already_exists(self, mock_query):
     #"""Probar que el producto no se cree si ya existe."""
@@ -87,4 +108,4 @@ class TestProduct(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("Product already exists", response.get_data(as_text=True))
 
-    
+

@@ -7,6 +7,7 @@ from flask_restful import Api, Resource, reqparse, abort, fields, marshal_with,m
 from api.models import User, Category, Brand, Product, Order, Cart, OrderProduct, Wishlist, db
 import json
 import re
+from werkzeug.security import generate_password_hash, check_password_hash
 
 
 user_args = reqparse.RequestParser()
@@ -125,20 +126,62 @@ class UserResource(Resource):
         user = User.query.filter_by(id=user_id).first()
         if not user:
             abort(404, message="User not found")
+            # Validar y actualizar solo los campos proporcionados en la solicitud
+        if args.get("name"):
+            if args["name"].isspace():
+             abort(400, message="El campo 'name' no puede estar vacío")
+        user.name = args["name"]
+        if args.get("lstF"):
+         if args["lstF"].isspace():
+            abort(400, message="El campo 'lstF' no puede estar vacío")
+        user.lstF = args["lstF"]
 
-        # Actualizar todos los campos
-        user.name = args['name']
-        user.lstF = args['lstF']
-        user.lstM = args['lstM']
-        user.address = args['address']
-        user.email = args['email']
-        user.password = args['password']
-        user.c_pass = args['c_pass']
-        user.phone = args['phone']
-        user.payment = args['payment']
-        user.role = args['role']
-        user.remember_token = args.get('remember_token')
+        if args.get("lstM"):
+         if args["lstM"].isspace():
+            abort(400, message="El campo 'lstM' no puede estar vacío")
+        user.lstM = args["lstM"]
 
+        if args.get("address"):
+         if args["address"].isspace():
+            abort(400, message="El campo 'address' no puede estar vacío")
+        user.address = args["address"]
+
+        if args.get("email"):
+         email = args["email"].strip()
+        if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email):
+            abort(400, message="Formato de correo electrónico inválido")
+        if User.query.filter(User.email == email, User.id != user_id).first():
+            abort(400, message="El correo electrónico ya está en uso")
+        user.email = email
+
+        if args.get("password"):
+         if len(args["password"]) < 8:
+            abort(400, message="La contraseña debe tener al menos 8 caracteres")
+        if args["password"] != args.get("c_pass"):
+            abort(400, message="Las contraseñas no coinciden")
+        # Cifrar la nueva contraseña antes de guardarla
+        user.password = generate_password_hash(args["password"], method="pbkdf2:sha256")
+
+        if args.get("phone"):
+         if not re.match(r"^\+?[1-9]\d{1,14}$", args["phone"]):
+            abort(400, message="Formato de número de teléfono inválido")
+        user.phone = args["phone"]
+
+        if args.get("payment"):
+         valid_payment_methods = ["credit_card", "paypal", "bank_transfer"]
+        if args["payment"] not in valid_payment_methods:
+            abort(400, message=f"Método de pago inválido. Opciones válidas: {', '.join(valid_payment_methods)}")
+        user.payment = args["payment"]
+
+        if args.get("role") is not None:
+         if args["role"] not in [0, 1]:
+            abort(400, message="Rol inválido")
+        user.role = args["role"]
+
+        if args.get("remember_token"):
+         user.remember_token = args["remember_token"]
+
+    # Guardar los cambios en la base de datos
         db.session.commit()
         return user, 200
     def delete(self, user_id):
@@ -168,8 +211,6 @@ product_fields = {
     'price': fields.Float,
     'description': fields.String,
     'stock': fields.Integer,
-    # 'category_id': fields.Integer,
-    # 'brand_id': fields.Integer,
     'img': fields.String,
     'category_name':fields.String,
     'brand_username':fields.String,
@@ -206,7 +247,7 @@ class ProductResource(Resource):
     def post(self):
         args = product_args.parse_args()
         
-        # # Validaciones adicionales si es necesario
+        # Validaciones adicionales si es necesario
         if not args['name'] or args['name'].isspace():
             response = Response(json.dumps({'error': 'Name cannot be empty'}),
                              status=400,
@@ -282,7 +323,53 @@ class ProductResource(Resource):
         product = Product.query.get(product_id)
         if not product:
             abort(404, message="Product not found")
+            # Validaciones adicionales si es necesario
+        if not args['name'] or args['name'].isspace():
+            response = Response(json.dumps({'error': 'Name cannot be empty'}),
+                             status=400,
+                             mimetype='application/json')
+            return abort(response)
+            
+         # Validación para el precio (debe ser numérico y positivo)
+        try:
+            price = float(args['price'])
+            if price <= 0:
+                return abort(400, message="Price must be greater than 0")
+        except ValueError:
+            return abort(400,message="Price must be a valid number")
+
+        if not args['description'] or args['description'].isspace():
+            response = Response(json.dumps({'error': 'description cannot be empty'}),
+                             status=400,
+                             mimetype='application/json')
+            return abort(response)
+            
+        # Validación para el stock (debe ser un entero no negativo)
+        try:
+            stock = int(args['stock'])
+            if stock < 0:
+                return abort(400, message="Stock cannot be negative")
+        except ValueError:
+            return {"error": "Stock must be a valid integer"}, 400
+         # Validación para la URL de la imagen (opcional, pero puede ser verificada si se requiere)
+        if args['img'] and not args['img'].startswith(('http://', 'https://')):
+            return abort(400, message="Image URL must start with 'http://' or 'https://'")
         
+        # if not args['category_id'] and str(args['category_id']).isspace():
+        if not args['category_id'] or args['category_id'] == " ":
+            # return abort(404,message="category id cannot by empty")
+            return {"error": "Category ID cannot be empty"}, 400
+        
+        if not args['brand_id'] or str(args['brand_id']).isspace():
+            return ({"error": "Brand ID cannot be empty or just spaces"}), 400
+        # Validaciones para categoría y marca (deben existir en la base de datos)
+        category = Category.query.get(args['category_id'])
+        if not category:
+            return abort(404, message="categroy not found.")
+
+        brand = Brand.query.get(args['brand_id'])
+        if not brand:
+            return abort(404, message="brand not found.")
         # Actualizar campos del producto
         product.name = args['name']
         product.price = args['price']
@@ -310,8 +397,15 @@ class WishlistController(Resource):
     @jwt_required()
     def post(self):
         user_id = get_jwt_identity()
+        
         args = self.wishlist_args.parse_args()
         product_id = args['product_id']
+                
+       
+        # Verificar si el producto existe en la base de datos
+        product = Product.query.filter_by(id=product_id).first()
+        if not product:
+            abort(404, message="The product does not exist.")
 
         # Verificar si ya existe el producto en la lista de deseos
         existing_wishlist = Wishlist.query.filter_by(user_id=user_id, product_id=product_id).first()
@@ -406,25 +500,21 @@ class CartController(Resource):
         cart_item = Cart.query.filter_by(user_id=user_id, product_id=product_id).first()
 
         if cart_item:
-            # Si el producto ya está en el carrito, actualizar la cantidad
-            new_quantity = cart_item.quantity + quantity
+            return {
+            "message": "Product already in cart",
+            "current_quantity": cart_item.quantity,
+            "available_stock": product.stock
+            }, 200
 
-            if new_quantity > product.stock:
-                abort(400, message=f"Quantity exceeds available stock. Only {product.stock} items are available.")
-
-            cart_item.quantity = new_quantity
-            cart_item.total = cart_item.quantity * cart_item.price
-            # cart_item.save()
-            db.session.commit()
-        else:
-            # Si no está en el carrito, agregarlo
-            price = product.price
-            total = price * quantity
-            cart_item = Cart(user_id=user_id, product_id=product_id, quantity=quantity, price=price, total=total)
-            db.session.add(cart_item)
-            db.session.commit()
+    # Si no está en el carrito, agregarlo
+        price = product.price
+        total = price * quantity
+        cart_item = Cart(user_id=user_id, product_id=product_id, quantity=quantity, price=price, total=total)
+        db.session.add(cart_item)
+        db.session.commit()
 
         return {"message": "Product added to cart"}, 200
+        
 
     @jwt_required()
     def get(self):
@@ -613,10 +703,16 @@ class Categories(Resource):
         if not category:
             return {"error": "Category not found"}, 404
 
-        if args['name'] and not args['name'].isspace():
-            category.name = args['name']
-        if args['description'] and not args['description'].isspace():
-            category.description = args['description']
+        if not args['name'] or args['name'].isspace():
+         response = Response(json.dumps({'error': 'Name cannot be empty'}),
+                             status=400,
+                             mimetype='application/json')
+         return abort(response)
+        if not args['description'] or args['description'].isspace():
+         response = Response(json.dumps({'error': 'Description cannot be empty'}),
+                             status=400,
+                             mimetype='application/json')
+         return abort(response)
 
         db.session.commit()
         return {"message": f"Categoría {category_id} actualizada"}
@@ -656,19 +752,27 @@ class Brands(Resource):
         # Validaciones básicas
         if not args['username'] or args['username'].isspace():
             response = Response(json.dumps({'error': 'Username cannot be empty'}),
-                                status=400, mimetype='application/json')
-            return response
+                                status=400, 
+                                mimetype='application/json')
+            return abort(response)
         
         if not args['address'] or args['address'].isspace():
             response = Response(json.dumps({'error': 'Address cannot be empty'}),
-                                status=400, mimetype='application/json')
-            return response
+                                status=400, 
+                                mimetype='application/json')
+            return abort (response)
         
         if not args['phone'] or args['phone'].isspace():
             response = Response(json.dumps({'error': 'Phone cannot be empty'}),
+                                status=400, 
+                                mimetype='application/json')
+            return abort (response)
+               # Validar que la marca no exista
+        existing_brand = Brand.query.filter_by(username=args['username']).first()
+        if existing_brand:
+            response = Response(json.dumps({'error': 'Brand with this username already exists'}),
                                 status=400, mimetype='application/json')
-            return response
-
+            return abort(response)
         # Crear la nueva marca y guardarla en la base de datos
         brand = Brand(username=args['username'], address=args['address'], phone=args['phone'])
         db.session.add(brand)
@@ -700,14 +804,31 @@ class BrandResource(Resource):
         # Buscar la marca por ID
         brand = Brand.query.filter_by(id=brand_id).first()
         if not brand:
-            abort(404, message="Brand not found")
+            return {"error":"Brand not found"},404
+        
+        if not args['username'] or args['username'].isspace():
+            response = Response(json.dumps({'error': 'Username cannot be empty'}),
+                                status=400, 
+                                mimetype='application/json')
+            return abort(response)
+        
+        if not args['address'] or args['address'].isspace():
+            response = Response(json.dumps({'error': 'Address cannot be empty'}),
+                                status=400, 
+                                mimetype='application/json')
+            return abort (response)
+        
+        if not args['phone'] or args['phone'].isspace():
+            response = Response(json.dumps({'error': 'Phone cannot be empty'}),
+                                status=400, 
+                                mimetype='application/json')
+            return abort (response) 
 
         # Actualizar los campos
         brand.username = args['username']
         brand.address = args['address']
         brand.phone = args['phone']
         db.session.commit()
-
         return brand
 
     def delete(self, brand_id):
