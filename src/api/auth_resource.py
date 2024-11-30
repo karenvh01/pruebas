@@ -1,19 +1,20 @@
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_restful import Resource
+from api.middleware.auth import role_required
 from flask import request
-from flask_jwt_extended import create_access_token
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt
 from api.extensions import db
 from api.models import User
 import re
 
 
 class AuthResource(Resource):
-    
+
     def post(self, action):
         data = request.get_json()
 
         if action == "register":
-             # Validar que todos los campos requeridos estén presentes y no vacíos
+            # Validar que todos los campos requeridos estén presentes y no vacíos
             required_fields = ["name", "lstF", "lstM", "address", "email", "password", "c_pass", "phone", "payment"]
             missing_fields = [field for field in required_fields if not data.get(field) or data[field].isspace()]
             if missing_fields:
@@ -23,8 +24,9 @@ class AuthResource(Resource):
             email = data["email"].strip()
             if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email):
                 return {"message": "Formato de correo electrónico inválido"}, 400
-            if User.query.filter_by(email=data["email"]).first():
+            if User.query.filter_by(email=email).first():
                 return {"message": "El usuario ya está registrado"}, 400
+            
             # Validar que las contraseñas coincidan
             if data["password"] != data["c_pass"]:
                 return {"message": "Las contraseñas no coinciden"}, 400
@@ -64,7 +66,6 @@ class AuthResource(Resource):
             return {"message": "Usuario registrado exitosamente"}, 201
 
         elif action == "login":
-
             required_fields = ["email", "password"]
             missing_fields = [field for field in required_fields if field not in data or not data[field]]
 
@@ -77,10 +78,23 @@ class AuthResource(Resource):
 
             # Usar email como identity y pasar otros datos en additional_claims
             access_token = create_access_token(
-                identity=usuario.email,  # El identity debe ser un string único (como el email)
-                additional_claims={"id": usuario.id, "role": usuario.role}  # Otros datos como claims adicionales
+                identity=usuario.email,
+                additional_claims={"id": usuario.id, "role": usuario.role}
             )
             return {"access_token": access_token}, 200
 
         else:
             return {"message": "Acción no válida. Usa 'register' o 'login'"}, 400
+
+    @jwt_required()
+    def get(self):
+        claims = get_jwt()
+        role = claims.get("role")
+
+        if role == 1:  # Si es administrador
+            return {"message": "¡Bienvenido, administrador!"}, 200
+        elif role == 0:  # Si es usuario normal
+            return {"message": "¡Bienvenido, usuario!"}, 200
+        else:
+            return {"message": "Rol no reconocido"}, 400
+        

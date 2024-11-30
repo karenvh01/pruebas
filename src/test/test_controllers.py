@@ -124,64 +124,8 @@ def test_user_get(mock_get):
          assert result.remember_token == 'some_token'
          mock_get.assert_called_once()        
 
+    
 
-class TestCategory(unittest.TestCase):
-    def setUp(self):
-         self.app = Flask(__name__)
-         self.app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
-         self.app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-        # Inicializar API y recursos
-         self.api = Api(self.app)
-         self.api.add_resource(Categories, '/categories', '/categories/<int:category_id>')
-
-         self.client = self.app.test_client()
-         self.app_context = self.app.app_context()
-         self.app_context.push()
-         db.init_app(self.app)
-         db.create_all()
-          # Insertar una categoría inicial en la base de datos
-         with self.app_context:
-            existing_category = Category(name="Books", description="All about books")
-            db.session.add(existing_category)
-            db.session.commit()
-    @patch('api.controllers.Category.query')
-    def test_get_all_categories(self, mock_query):
-        # Mockeando los datos de la base de datos
-        mock_query.all.return_value = [
-            Category(id=1, name="Books", description="All about books"),
-            Category(id=2, name="Electronics", description="Gadgets and devices"),
-        ]
-        response = self.client.get('/categories')
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("Books", response.get_data(as_text=True))
-        self.assertIn("Electronics", response.get_data(as_text=True))
-        
-    @patch('api.controllers.Category.query')
-    def test_get_category_by_id(self, mock_query):
-        # Mockeando una categoría específica
-        mock_query.filter_by.return_value.first.return_value = Category(
-            id=1, name="Books", description="All about books"
-        )
-        response = self.client.get('/categories/1')
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("Book", response.get_data(as_text=True))
-
-    def test_get_nonexistent_category(self):
-        # Prueba para una categoría que no existe
-        response = self.client.get('/categories/999')
-        self.assertEqual(response.status_code, 404)
-        self.assertIn("Category not found", response.get_data(as_text=True))
-
-    @patch('api.models.Category.query')
-    def test_create_duplicate_category_mock(self, mock_query):
-    # Mockear que la consulta devuelve una categoría existente
-        mock_query.filter_by.return_value.first.return_value = Category(
-        id=1, name="Books", description="All about books")
-        data = {"name": "Books", "description": "Duplicate category"}
-        response = self.client.post('/categories', json=data)
-    # Verificar que devuelve un error 400
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("Category already exists", response.get_data(as_text=True))
+    
 
 

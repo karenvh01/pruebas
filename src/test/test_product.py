@@ -1,111 +1,168 @@
 import pytest
-from unittest.mock import MagicMock, patch
-from api.models import Product, Category, Brand, db
 from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
-from api.controllers import ProductResource
 from flask_restful import Api
-import unittest
+from flask_jwt_extended import JWTManager, create_access_token
+from api.models import db, Product, Category, Brand
+from api.controllers import ProductResource
+import json
 
-# TEST DE PRODUCTOS
-class TestProduct(unittest.TestCase):
-    def setUp(self):
-        self.app = Flask(__name__)
-        self.app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
-        self.app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-        self.api = Api(self.app)
-        self.api.add_resource(ProductResource, '/products', '/products/<int:product_id>')
-        self.client = self.app.test_client()
-        self.app_context = self.app.app_context()
-        self.app_context.push()
-        db.init_app(self.app)
+
+@pytest.fixture
+def app():
+    app = Flask(__name__)
+    
+    # Configurar base de datos y JWT
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['JWT_SECRET_KEY'] = 'your_secret_key'
+    
+    jwt = JWTManager(app)
+
+    api = Api(app)
+    api.add_resource(ProductResource, '/products', '/products/<int:product_id>')
+    
+    with app.app_context():
+        db.init_app(app)
         db.create_all()
+        yield app
+        db.session.remove()
+        db.drop_all()
 
-        # Crear datos iniciales para pruebas
-        with self.app_context:
-            self.category = Category(name="Electronics", description="Gadgets and devices")
-            self.brand = Brand(username="BrandA", address="123 Brand St", phone="1234567890")
-            db.session.add(self.category)
-            db.session.add(self.brand)
-            db.session.commit()
-                        # Asignar category_id y brand_id para pruebas
-            
-    @patch('api.models.Product.query')
-    def test_get(self, product_id):
-        product = Product.query.filter_by(id=product_id).first()
-        if not product:
-            return {"message": "Product not found"}, 404
-        return {"id": product.id, "name": product.name}, 200
-    @patch('api.models.Product.query')
-    def test_create_product_success(self, mock_query):
-        """Prueba para crear un producto correctamente."""
-        mock_query.filter_by.return_value.first.return_value = None
 
-        data = {
-            "name": "Smartphone",
-            "price": 999.99,
-            "description": "High-end smartphone",
-            "stock": 50,
-            "category_id": self.category.id,
-            "brand_id": self.brand.id,
-            "img": "http://example.com/smartphone.jpg",
-        }
+@pytest.fixture
+def client(app):
+    return app.test_client()
 
-        with self.app_context:
-            response = self.client.post('/products', json=data)
-            self.assertEqual(response.status_code, 201)
-            self.assertIn("Smartphone", response.get_data(as_text=True))
 
-    def test_get_nonexistent_product(self):
-      response = self.client.get('/products/999')  # Supongamos que el ID 999 no existe
-      self.assertEqual(response.status_code, 404)
-      self.assertIn("Product not found", response.get_data(as_text=True))
+@pytest.fixture
+def setup_data(app):
+    """Crea datos iniciales para pruebas."""
+    category = Category(name="Electronics", description="Gadgets and devices")
+    brand = Brand(username="BrandA", address="123 Brand St", phone="1234567890")
+    db.session.add(category)
+    db.session.add(brand)
+    db.session.commit()
+    return {"category": category, "brand": brand}
 
-    def test_delete_product_success(self):
-        with self.app_context:
-        # Crear producto para probar su eliminación
-            product = Product(
-                name="Camera",
-                price=499.99,
-                description="High-resolution camera",
-                stock=10,
-                category_id=self.category.id,
-                brand_id=self.brand.id,
-                img="http://example.com/camera.jpg"
-            )
-            db.session.add(product)
-            db.session.commit()
 
-        # Intentar eliminar el producto creado
-            response = self.client.delete(f'/products/{product.id}')
-            self.assertEqual(response.status_code, 204)  # Código 204 para DELETE exitoso
+def test_get_product(client, setup_data):
+    """Prueba para obtener un producto."""
+    category = setup_data['category']
+    brand = setup_data['brand']
+    
+    # Crear un producto en la base de datos
+    product = Product(
+        name="Laptop",
+        price=1200.99,
+        description="A high-performance laptop",
+        stock=5,
+        category_id=category.id,
+        brand_id=brand.id,
+        img="http://example.com/laptop.jpg"
+    )
+    db.session.add(product)
+    db.session.commit()
 
-        # Verificar que ya no existe en la base de datos
-            deleted_product = Product.query.get(product.id)
-            self.assertIsNone(deleted_product)
-    @patch('api.models.Product.query')
-    def test_product_already_exists(self, mock_query):
-    #"""Probar que el producto no se cree si ya existe."""
-    # Simular que el producto ya existe en la base de datos
-        mock_query.filter_by.return_value.first.return_value = Product(
-        id=1, name="Product 1", price=100.0, description="A great product", stock=10,
-        category_id=self.category.id, brand_id=self.brand.id, img="http://example.com/image.jpg"
-        )
+    # Crear un token JWT
+    access_token = create_access_token(identity="test_user")
+    
+    # Realizar la solicitud GET
+    response = client.get(f'/products/{product.id}', headers={'Authorization': f'Bearer {access_token}'})
+    
+    assert response.status_code == 200
+    assert product.name in response.get_data(as_text=True)
 
-        data = {
-            "name": "Product 1",
-            "price": 100.0,
-            "description": "A great product",
-            "stock": 10,
-            "category_id": self.category.id,
-            "brand_id": self.brand.id,
-            "img": "http://example.com/image.jpg"
-        }
 
-        response = self.client.post('/products', json=data)
+def test_create_product_success(client, setup_data):
+    """Prueba para crear un producto correctamente."""
+    category = setup_data['category']
+    brand = setup_data['brand']
+    
+    # Crear un token JWT
+    access_token = create_access_token(identity="test_user")
+    
+    data = {
+        "name": "Smartphone",
+        "price": 999.99,
+        "description": "High-end smartphone",
+        "stock": 50,
+        "category_id": category.id,
+        "brand_id": brand.id,
+        "img": "http://example.com/smartphone.jpg",
+    }
 
-    # Verifica el código de estado
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("Product already exists", response.get_data(as_text=True))
+    response = client.post('/products', json=data, headers={'Authorization': f'Bearer {access_token}'})
+    
+    assert response.status_code == 201
+    assert "Smartphone" in response.get_data(as_text=True)
+
+
+def test_delete_product_success(client, setup_data):
+    """Prueba para eliminar un producto exitosamente."""
+    category = setup_data['category']
+    brand = setup_data['brand']
+    
+    # Crear un producto en la base de datos
+    product = Product(
+        name="Camera",
+        price=499.99,
+        description="High-resolution camera",
+        stock=10,
+        category_id=category.id,
+        brand_id=brand.id,
+        img="http://example.com/camera.jpg"
+    )
+    db.session.add(product)
+    db.session.commit()
+
+    # Crear un token JWT
+    access_token = create_access_token(identity="test_user")
+
+    # Realizar la solicitud DELETE
+    response = client.delete(f'/products/{product.id}', headers={'Authorization': f'Bearer {access_token}'})
+    
+    assert response.status_code == 204
+    
+    # Verificar que ya no existe en la base de datos
+    deleted_product = Product.query.get(product.id)
+    assert deleted_product is None
+
+
+def test_product_already_exists(client, setup_data):
+    """Prueba para validar que no se cree un producto duplicado."""
+    category = setup_data['category']
+    brand = setup_data['brand']
+    
+    # Crear un producto en la base de datos
+    product = Product(
+        name="Smartwatch",
+        price=150.0,
+        description="A wearable device",
+        stock=20,
+        category_id=category.id,
+        brand_id=brand.id,
+        img="http://example.com/smartwatch.jpg"
+    )
+    db.session.add(product)
+    db.session.commit()
+
+    # Crear un token JWT
+    access_token = create_access_token(identity="test_user")
+
+    # Intentar crear el mismo producto nuevamente
+    data = {
+        "name": "Smartwatch",
+        "price": 150.0,
+        "description": "A wearable device",
+        "stock": 20,
+        "category_id": category.id,
+        "brand_id": brand.id,
+        "img": "http://example.com/smartwatch.jpg",
+    }
+
+    response = client.post('/products', json=data, headers={'Authorization': f'Bearer {access_token}'})
+    
+    assert response.status_code == 400
+    assert "Product already exists" in response.get_data(as_text=True)
 
 

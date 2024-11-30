@@ -8,6 +8,7 @@ from api.models import User, Category, Brand, Product, Order, Cart, OrderProduct
 import json
 import re
 from werkzeug.security import generate_password_hash, check_password_hash
+from api.middleware.auth import role_required
 
 
 user_args = reqparse.RequestParser()
@@ -193,6 +194,11 @@ class UserResource(Resource):
 
         return '', 204
 
+class UserListResource(Resource):
+    @marshal_with(user_fields)
+    def get(self):
+        user = User.query.all()
+        return user 
 
 
 product_args = reqparse.RequestParser()
@@ -221,6 +227,7 @@ product_fields = {
 }
 
 class ProductResource(Resource):
+    @jwt_required()
     def get(self, product_id=None):
         if product_id:
             product = Product.query.filter_by(id=product_id).first()
@@ -243,7 +250,7 @@ class ProductResource(Resource):
                 product.brand_username = brand.username if brand else None
             return marshal(products, product_fields), 200
   
-    
+    @jwt_required()
     def post(self):
         args = product_args.parse_args()
         
@@ -315,8 +322,9 @@ class ProductResource(Resource):
         db.session.add(new_product)
         db.session.commit()
         return marshal(new_product, product_fields), 201
-
-
+        
+       
+    @jwt_required()
     @marshal_with(product_fields)
     def patch(self, product_id):
         args = product_args.parse_args()
@@ -380,7 +388,9 @@ class ProductResource(Resource):
         product.img = args['img']
         db.session.commit()
         return product, 200
-
+    
+    @jwt_required()
+    # @role_required(1) 
     def delete(self, product_id):
         product = Product.query.get(product_id)
         if not product:
@@ -480,6 +490,7 @@ class CartController(Resource):
             abort(400, message="Quantity must be greater than 0.")
 
     @jwt_required()
+    
     def post(self):
         user_id = get_jwt_identity()
         args = self.cart_args.parse_args()
@@ -666,6 +677,7 @@ category_fields = {
 }   
 class Categories(Resource):    
      @marshal_with(category_fields)
+     @jwt_required()
      def get(self, category_id=None):
         if category_id:  # Si category_id es proporcionado
             category = Category.query.filter_by(id=category_id).first()  # Busca por ID
@@ -676,6 +688,7 @@ class Categories(Resource):
             categories = Category.query.all()
             return categories  # Devuelve todas las categorías
         
+     @jwt_required()
      def post(self):
         args = category_args.parse_args()
         if not args['name'] or args['name'].isspace():
@@ -696,27 +709,33 @@ class Categories(Resource):
         db.session.commit()
         return {"message": "Category created successfully", "id": new_category.id}, 201
      
+     @jwt_required()
      def patch(self, category_id):
-        args = category_args.parse_args()
-        category = Category.query.filter_by(id=category_id).first()
-
-        if not category:
-            return {"error": "Category not found"}, 404
-
-        if not args['name'] or args['name'].isspace():
-         response = Response(json.dumps({'error': 'Name cannot be empty'}),
+         args = category_args.parse_args()
+         category = Category.query.filter_by(id=category_id).first()
+         
+         if not category:
+             return {"error": "Category not found"}, 404
+         
+         if not args['name'] or args['name'].isspace():
+             response = Response(json.dumps({'error': 'Name cannot be empty'}),
                              status=400,
                              mimetype='application/json')
-         return abort(response)
-        if not args['description'] or args['description'].isspace():
-         response = Response(json.dumps({'error': 'Description cannot be empty'}),
+             return abort(response)
+         
+         if not args['description'] or args['description'].isspace():
+                 response = Response(json.dumps({'error': 'Description cannot be empty'}),
                              status=400,
                              mimetype='application/json')
-         return abort(response)
+                 return abort(response)
+         
+         category.name = args['name']
+         category.description = args['description']
+         db.session.commit()
+         return {"message": f"Categoría {category_id} actualizada"}
 
-        db.session.commit()
-        return {"message": f"Categoría {category_id} actualizada"}
      
+     @jwt_required()
      def delete(self, category_id):
         category = Category.query.filter_by(id=category_id).first()
         if not category:
@@ -745,6 +764,7 @@ brand_fields = {
 
 class Brands(Resource):
     @marshal_with(brand_fields)
+    @jwt_required()
     def post(self):
         # Obtener los argumentos de la solicitud
         args = brand_args.parse_args()
@@ -782,12 +802,14 @@ class Brands(Resource):
         return brand, 201
 
     @marshal_with(brand_fields)
+    @jwt_required()
     def get(self):
         # Obtener todas las marcas
         brands = Brand.query.all()
         return brands
 
 class BrandResource(Resource):
+    @jwt_required()
     @marshal_with(brand_fields)
     def get(self, brand_id):
         # Obtener una marca específica por ID
@@ -797,6 +819,7 @@ class BrandResource(Resource):
         return brand
 
     @marshal_with(brand_fields)
+    @jwt_required()
     def patch(self, brand_id):
         # Obtener los argumentos de la solicitud
         args = brand_args.parse_args()
@@ -830,7 +853,8 @@ class BrandResource(Resource):
         brand.phone = args['phone']
         db.session.commit()
         return brand
-
+    
+    @jwt_required()
     def delete(self, brand_id):
         # Buscar la marca por ID
         brand = Brand.query.filter_by(id=brand_id).first()
