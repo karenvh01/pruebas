@@ -180,3 +180,22 @@ def test_delete_nonexistent_order(client, setup_data):
     assert response.status_code == 404
     assert "Order not found" in response.get_data(as_text=True)
 
+def test_validate_order_total(client, setup_data):
+    user = setup_data['user']
+    cart_item = setup_data['cart_item']
+
+    # Cambiar el precio del producto y actualizar el carrito
+    cart_item.price = 200.0
+    cart_item.total = 200.0 * cart_item.quantity
+    db.session.commit()
+
+    access_token = create_access_token(identity=str(user.id))
+
+    # Crear una orden
+    response = client.post('/orders', headers={'Authorization': f'Bearer {access_token}'})
+    data = response.get_json()
+
+    assert response.status_code == 201
+    assert data["total_amount"] == 200.0 * cart_item.quantity
+
+

@@ -151,3 +151,57 @@ def test_add_product_already_in_wishlist(client, setup_data):
     assert response.status_code == 400
     assert "The product is already on your wishlist" in response.get_data(as_text=True)
 
+
+def test_remove_nonexistent_wishlist_item(client, setup_data):
+    user = setup_data['user']
+
+    # Crear un token JWT para el usuario
+    access_token = create_access_token(identity=str(user.id))
+
+    # Intentar eliminar un elemento que no existe
+    response = client.delete('/wishlist/9999', headers={'Authorization': f'Bearer {access_token}'})
+
+    # Comprobar la respuesta
+    assert response.status_code == 404
+    assert "Wishlist item not found" in response.get_data(as_text=True)
+
+def test_wishlist_is_user_specific(client, setup_data):
+    user1 = setup_data['user']
+
+    # Crear un segundo usuario
+    user2 = User(
+        name="Another User",
+        lstF="Another",
+        lstM="User",
+        address="456 Main St",
+        email="another@example.com",
+        password="password123",
+        c_pass="password123",
+        phone="555-5678",
+        payment="credit_card",
+        role=1,
+        remember_token="some_other_token"
+    )
+    db.session.add(user2)
+    db.session.commit()
+
+    # Agregar un producto al wishlist del primer usuario
+    wishlist_item = Wishlist(user_id=user1.id, product_id=setup_data['product'].id)
+    db.session.add(wishlist_item)
+    db.session.commit()
+
+    # Crear tokens para ambos usuarios
+    token_user1 = create_access_token(identity=str(user1.id))
+    token_user2 = create_access_token(identity=str(user2.id))
+
+    # Verificar que el usuario 1 vea su wishlist
+    response1 = client.get('/wishlist', headers={'Authorization': f'Bearer {token_user1}'})
+    assert response1.status_code == 200
+    assert len(response1.get_json()['wishlist']) == 1
+
+    # Verificar que el usuario 2 vea una wishlist vacía
+    response2 = client.get('/wishlist', headers={'Authorization': f'Bearer {token_user2}'})
+    assert response2.status_code == 200
+    assert "Your wishlist is empty" in response2.get_data(as_text=True)
+
+

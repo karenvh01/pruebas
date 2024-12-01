@@ -196,3 +196,39 @@ def test_add_product_to_cart_exceeding_stock(client, setup_data):
 
     assert response.status_code == 400
     assert f"Quantity exceeds available stock. Only {product.stock} items are available." in response.get_data(as_text=True)
+
+def test_add_product_to_cart_with_negative_values(client, setup_data):
+    user = setup_data['user']
+    access_token = create_access_token(identity=str(user.id))
+
+    response = client.post('/carts', json={
+        'product_id': -1,
+        'quantity': -5
+    }, headers={'Authorization': f'Bearer {access_token}'})
+
+    assert response.status_code == 400
+    assert "Product ID must be greater than 0." in response.get_data(as_text=True)
+
+def test_access_cart_with_expired_jwt(client, setup_data):
+    user = setup_data['user']
+    expired_token = create_access_token(identity=str(user.id), expires_delta=-1)
+
+    response = client.get('/carts', headers={'Authorization': f'Bearer {expired_token}'})
+    assert response.status_code == 401
+    assert "Token has expired" in response.get_data(as_text=True)
+
+def test_add_product_with_zero_stock(client, setup_data):
+    user = setup_data['user']
+    product = setup_data['product']
+    product.stock = 0
+    db.session.commit()
+
+    access_token = create_access_token(identity=str(user.id))
+
+    response = client.post('/carts', json={
+        'product_id': product.id,
+        'quantity': 1
+    }, headers={'Authorization': f'Bearer {access_token}'})
+    
+    assert response.status_code == 400
+    assert "Quantity exceeds available stock" in response.get_data(as_text=True)

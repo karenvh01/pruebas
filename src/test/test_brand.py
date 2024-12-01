@@ -118,3 +118,33 @@ def test_get_brands_authorized(client):
 
     assert response.status_code == 200
 
+def test_create_duplicate_brand(client, setup_data):
+    access_token = create_access_token(identity="test_user")
+    headers = {'Authorization': f'Bearer {access_token}'}
+    
+    brand = setup_data['brand']
+    data = {"username": brand.username, "address": "New Address", "phone": "1234567890"}
+    response = client.post('/api/brands', json=data, headers=headers)
+    assert response.status_code == 400
+    assert "Brand with this username already exists" in response.get_data(as_text=True)
+
+
+def test_create_brand_with_empty_fields(client):
+    access_token = create_access_token(identity="test_user")
+    headers = {'Authorization': f'Bearer {access_token}'}
+    
+    data = {"username": "", "address": "123 Main St", "phone": "555-1234"}
+    response = client.post('/api/brands', json=data, headers=headers)
+    assert response.status_code == 400
+    assert "Username cannot be empty" in response.get_data(as_text=True)
+    
+    data = {"username": "BrandC", "address": "", "phone": "555-1234"}
+    response = client.post('/api/brands', json=data, headers=headers)
+    assert response.status_code == 400
+    assert "Address cannot be empty" in response.get_data(as_text=True)
+    
+    data = {"username": "BrandC", "address": "123 Main St", "phone": ""}
+    response = client.post('/api/brands', json=data, headers=headers)
+    assert response.status_code == 400
+    assert "Phone cannot be empty" in response.get_data(as_text=True)
+

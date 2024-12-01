@@ -125,7 +125,3 @@ def test_user_get(mock_get):
          mock_get.assert_called_once()        
 
     
-
-    
-
-

@@ -122,3 +122,20 @@ def test_create_category(client):
     assert "Category created successfully" in response_json.get("message")
     assert response_json.get("id") is not None  # Asegúrate de que el ID de la categoría esté presente
 
+def test_create_category_invalid_data(client):
+    """Prueba para crear una categoría con datos inválidos."""
+    access_token = create_access_token(identity="test_user")
+    headers = {'Authorization': f'Bearer {access_token}'}
+    
+    # Caso 1: Nombre vacío
+    data = {"name": "", "description": "Valid description"}
+    response = client.post('/categories', json=data, headers=headers)
+    assert response.status_code == 400
+    assert "Name cannot be empty" in response.get_data(as_text=True)
+    
+    # Caso 2: Descripción vacía
+    data = {"name": "Valid Name", "description": ""}
+    response = client.post('/categories', json=data, headers=headers)
+    assert response.status_code == 400
+    assert "Description cannot be empty" in response.get_data(as_text=True)
+

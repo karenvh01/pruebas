@@ -47,7 +47,7 @@ class UserResource(Resource):
     def get(self, user_id):
         user = User.query.filter_by(id=user_id).first()
         if not user:
-            abort(404, message="User not found")
+            return {"error":"User not found"},404
         return user, 200
 
     @marshal_with(user_fields)
@@ -256,35 +256,30 @@ class ProductResource(Resource):
         
         # Validaciones adicionales si es necesario
         if not args['name'] or args['name'].isspace():
-            response = Response(json.dumps({'error': 'Name cannot be empty'}),
-                             status=400,
-                             mimetype='application/json')
-            return abort(response)
+            return{'error': 'Name cannot be empty'},400
+                             
             
          # Validación para el precio (debe ser numérico y positivo)
         try:
             price = float(args['price'])
             if price <= 0:
-                return abort(400, message="Price must be greater than 0")
+                return {"error":"Price must be greater than 0"},400
         except ValueError:
-            return abort(400,message="Price must be a valid number")
+            return {"error":"Price must be a valid number"},400
 
         if not args['description'] or args['description'].isspace():
-            response = Response(json.dumps({'error': 'description cannot be empty'}),
-                             status=400,
-                             mimetype='application/json')
-            return abort(response)
+            return {'error': 'description cannot be empty'},400
             
         # Validación para el stock (debe ser un entero no negativo)
         try:
             stock = int(args['stock'])
             if stock < 0:
-                return abort(400, message="Stock cannot be negative")
+                return {"error":"Stock cannot be negative"},400
         except ValueError:
             return {"error": "Stock must be a valid integer"}, 400
          # Validación para la URL de la imagen (opcional, pero puede ser verificada si se requiere)
         if args['img'] and not args['img'].startswith(('http://', 'https://')):
-            return abort(400, message="Image URL must start with 'http://' or 'https://'")
+            return {"error":"Image URL must start with 'http://' or 'https://'"},400
         
         # if not args['category_id'] and str(args['category_id']).isspace():
         if not args['category_id'] or args['category_id'] == " ":

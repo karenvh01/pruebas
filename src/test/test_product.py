@@ -166,3 +166,46 @@ def test_product_already_exists(client, setup_data):
     assert "Product already exists" in response.get_data(as_text=True)
 
 
+def test_get_products_by_category(client, setup_data):
+    category = setup_data['category']
+    brand = setup_data['brand']
+
+    # Crear productos
+    product1 = Product(name="Laptop", price=1200.99, description="A high-performance laptop",
+                       stock=5, category_id=category.id, brand_id=brand.id, img="http://example.com/laptop.jpg")
+    product2 = Product(name="Phone", price=799.99, description="A high-end smartphone",
+                       stock=10, category_id=category.id, brand_id=brand.id, img="http://example.com/phone.jpg")
+    db.session.add_all([product1, product2])
+    db.session.commit()
+
+    # Crear token JWT
+    access_token = create_access_token(identity="test_user")
+
+    # Realizar la solicitud con filtro
+    response = client.get(f'/products?category_id={category.id}', headers={'Authorization': f'Bearer {access_token}'})
+    
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert len(data) == 2  # Debería devolver ambos productos de la categoría
+
+def test_create_product_invalid_data(client, setup_data):
+    category = setup_data['category']
+    brand = setup_data['brand']
+
+    access_token = create_access_token(identity="test_user")
+
+    # Producto con precio inválido
+    data = {
+        "name": "Smartphone",
+        "price": -100,  # Precio inválido
+        "description": "A high-end smartphone",
+        "stock": 10,
+        "category_id": category.id,
+        "brand_id": brand.id,
+        "img": "http://example.com/smartphone.jpg",
+    }
+    response = client.post('/products', json=data, headers={'Authorization': f'Bearer {access_token}'})
+    
+    assert response.status_code == 400
+    assert "Price must be greater than 0" in response.get_data(as_text=True)
+
